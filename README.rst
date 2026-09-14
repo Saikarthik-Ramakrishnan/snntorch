@@ -68,6 +68,8 @@ snnTorch contains the following components:
      - dataset utility functions
 
 snnTorch is designed to be intuitively used with PyTorch, as though each spiking neuron were simply another activation in a sequence of layers. 
+For a reservoir example with explicit streaming state and readout training, see
+`Streaming liquid state machine <docs/examples/example_snn/example_snn_streaming_lsm.rst>`_.
 It is therefore agnostic to fully-connected layers, convolutional layers, residual connections, etc. 
 
 At present, the neuron models are represented by recursive functions which removes the need to store membrane potential traces for all neurons in a system in order to calculate the gradient. 
