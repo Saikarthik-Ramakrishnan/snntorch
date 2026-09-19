@@ -148,6 +148,10 @@ API & Examples
 ^^^^^^^^^^^^^^^^^^^^^^^^
 A complete API is available `here <https://snntorch.readthedocs.io/>`__. Examples, tutorials and Colab notebooks are provided.
 
+This fork also includes a `MindSense inference and memory lab
+<examples/mindsense_port/README.md>`_ with a standalone toy lesson and an
+optional local model-parity check.
+
 
 
 Quickstart 
