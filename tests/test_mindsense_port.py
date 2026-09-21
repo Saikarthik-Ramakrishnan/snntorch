@@ -179,3 +179,93 @@ def test_same_input_depends_on_recent_history(archive):
     assert not torch.equal(cold, warm)
     model.reset()
     torch.testing.assert_close(model.state(np.zeros(8)), cold)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "config",
+        "smoothing",
+        "recurrent",
+        "inputs",
+        "alpha",
+        "beta",
+        "thresholds",
+        "mean",
+        "scale",
+        "weights",
+        "calibration",
+    ],
+)
+def test_missing_archive_fields_rejected(archive, field):
+    del archive[field]
+    with pytest.raises(ValueError, match="Missing archive field"):
+        TorchMindSense(archive)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("smoothing", np.array(0)),
+        ("smoothing", np.array(2.5)),
+        ("smoothing", np.array(True)),
+        ("smoothing", np.array([4])),
+        ("inputs", np.zeros((8, 31))),
+        ("recurrent", np.zeros((7, 8))),
+        ("weights", np.zeros(24)),
+        ("calibration", np.array([1])),
+        ("scale", np.zeros(24)),
+        ("thresholds", np.full(8, -1.0)),
+        ("alpha", np.full(8, 1.1)),
+        ("beta", np.full(8, -0.1)),
+        ("mean", np.full(24, np.nan)),
+        ("weights", np.full(25, np.inf)),
+        ("inputs", np.full((8, 32), "0.1")),
+        ("inputs", np.zeros((8, 32), dtype=complex)),
+        ("config", np.array("[]")),
+        ("config", np.array("{")),
+    ],
+)
+def test_malformed_archive_rejected(archive, field, value):
+    archive[field] = value
+    with pytest.raises(ValueError):
+        TorchMindSense(archive)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("neurons", 0),
+        ("neurons", True),
+        ("neurons", 8.5),
+        ("delta_threshold", 0),
+        ("delta_threshold", -1),
+        ("delta_threshold", float("nan")),
+        ("delta_threshold", float("inf")),
+        ("delta_threshold", "0.75"),
+    ],
+)
+def test_invalid_config_rejected(archive, field, value):
+    import json
+
+    config = json.loads(str(archive["config"]))
+    config[field] = value
+    archive["config"] = np.array(json.dumps(config))
+    with pytest.raises(ValueError):
+        TorchMindSense(archive)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("weights", np.full(25, 1e100)),
+        ("scale", np.full(24, 1e-100)),
+    ],
+)
+def test_float32_conversion_rejects_overflow_and_underflow(
+    archive, field, value
+):
+    archive[field] = value
+    TorchMindSense(archive, dtype=torch.float64)
+    with pytest.raises(ValueError):
+        TorchMindSense(archive, dtype=torch.float32)
