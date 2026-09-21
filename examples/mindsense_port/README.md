@@ -37,8 +37,45 @@ score error below `1e-9`, identical spikes and identical policy decisions.
 Float32 differences are reported separately. A memory probe and a single-run
 CPU step-timing measurement are also included.
 
+The loader checks archive fields, shapes, finite weights, positive thresholds
+and scales, decay ranges and representability in the selected precision.
+Invalid reference or port scores fail the comparison. Policy replay also
+reports float32 behavior. Parameters and training remain unchanged.
+
+## Measure processing deadlines
+
+```sh
+python -m examples.mindsense_port.run_lab \
+  --mindsense-root /path/to/your/local/mindsense --lesson processing \
+  --frames 500 --repeats 3 --offered-hz 100 --deadline-ms 10
+python -m pytest tests/test_mindsense_port.py tests/test_mindsense_processing.py -q
+```
+
+This takes about 45 seconds for three CPU implementations: NumPy, float64 and
+float32. Each run starts a fresh session with the same inputs. Model order
+rotates across repeats. Normalization, quality checks, inference and policy
+are timed. Loading, baseline fitting and 50 warmup frames are excluded.
+
+- On-time handling: all responses within the deadline / all offered frames.
+- On-time scored coverage: usable scores within the deadline / all offered frames.
+- Tail latency: p95 and p99 time from scheduled arrival to result.
+
+The example target is 95% for both ratios. A run of fast abstentions fails
+scored coverage. Reports retain every latency, status, late-frame count and
+per-repeat result. Exit status is nonzero if any repeat misses either target.
+These are engineering test settings; the founder's final workload still needs
+confirmation.
+
+The preloaded FIFO drains every frame, including backlog. Queue overflow is
+outside this test. Sample timestamps remain one logical second apart while
+replay runs at the requested wall-clock rate. This does not change the model's
+time constants or establish a native 100 Hz sensing pipeline. Raw sensor
+acquisition, feature extraction, transport and energy remain unmeasured.
+
 Reports default to `experiments/snntorch_port/fork_results.json` inside the
-private checkout. They include a model hash and local environment paths.
+private checkout. Processing uses `fork_processing_results.json` in the same
+directory. Use `--output /path/to/new-report.json` to preserve previous runs.
+Reports include model/code hashes, hardware metadata and local environment paths.
 Keep them private. No trained weights, private data or recorded results are
 included here. The runner makes no network requests of its own.
 

@@ -12,6 +12,63 @@ import torch
 from torch import nn
 
 
+def validate_archive(archive, dtype):
+    """Validate the inference schema before creating any neuron state."""
+    try:
+        config = json.loads(str(archive["config"]))
+        if not isinstance(config, dict):
+            raise ValueError("config must be a JSON object")
+        n = config["neurons"]
+        if type(n) is not int or n < 1:
+            raise ValueError("neurons must be a positive integer")
+        smoothing = np.asarray(archive["smoothing"])
+        if (
+            smoothing.shape != ()
+            or smoothing.dtype.kind not in "iu"
+            or smoothing.item() < 1
+        ):
+            raise ValueError("smoothing must be a positive integer scalar")
+        delta = config["delta_threshold"]
+        if type(delta) not in (int, float):
+            raise ValueError("delta_threshold must be numeric")
+        delta_tensor = torch.tensor(delta, dtype=dtype)
+        if not torch.isfinite(delta_tensor) or delta_tensor <= 0:
+            raise ValueError("delta_threshold must be positive and finite")
+        shapes = {
+            "recurrent": (n, n),
+            "inputs": (n, 32),
+            "alpha": (n,),
+            "beta": (n,),
+            "thresholds": (n,),
+            "mean": (3 * n,),
+            "scale": (3 * n,),
+            "weights": (3 * n + 1,),
+            "calibration": (2,),
+        }
+        tensors = {}
+        for name, shape in shapes.items():
+            array = np.asarray(archive[name])
+            if array.shape != shape or array.dtype.kind not in "fiu":
+                raise ValueError(
+                    f"{name} must be a numeric array of shape {shape}"
+                )
+            tensor = torch.tensor(array, dtype=dtype)
+            if not torch.isfinite(tensor).all():
+                raise ValueError(f"{name} must be finite in {dtype}")
+            tensors[name] = tensor
+        for name in ("alpha", "beta"):
+            if ((tensors[name] < 0) | (tensors[name] > 1)).any():
+                raise ValueError(f"{name} must lie in [0, 1]")
+        for name in ("scale", "thresholds"):
+            if (tensors[name] <= 0).any():
+                raise ValueError(f"{name} must be strictly positive")
+    except KeyError as error:
+        raise ValueError(f"Missing archive field: {error.args[0]}") from error
+    except (TypeError, OverflowError) as error:
+        raise ValueError(f"Invalid archive value: {error}") from error
+    return config, int(smoothing.item()), tensors
+
+
 class TorchMindSense(nn.Module):
     """One mutable model per session; normalized eight-feature inputs.
 
@@ -23,9 +80,8 @@ class TorchMindSense(nn.Module):
         super().__init__()
         if dtype not in (torch.float32, torch.float64):
             raise ValueError("Use float32 or float64")
-        self.config = json.loads(str(archive["config"]))
+        self.config, self.smoothing, tensors = validate_archive(archive, dtype)
         self.n = self.config["neurons"]
-        self.smoothing = int(archive["smoothing"])
         self.delta_threshold = self.config["delta_threshold"]
         for name in (
             "recurrent",
@@ -35,13 +91,11 @@ class TorchMindSense(nn.Module):
             "weights",
             "calibration",
         ):
-            self.register_buffer(
-                name, torch.tensor(archive[name], dtype=dtype)
-            )
+            self.register_buffer(name, tensors[name])
         self.neuron = snn.Synaptic(
-            alpha=torch.tensor(archive["alpha"], dtype=dtype),
-            beta=torch.tensor(archive["beta"], dtype=dtype),
-            threshold=torch.tensor(archive["thresholds"], dtype=dtype),
+            alpha=tensors["alpha"],
+            beta=tensors["beta"],
+            threshold=tensors["thresholds"],
             reset_mechanism="none",
             surrogate_disable=True,
         )
